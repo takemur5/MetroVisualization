@@ -1,0 +1,1079 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>深圳地铁乘客出行可视化</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- 引入Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"
+          integrity="sha512-xodZBNTC5n17Xt2atTPuE1HxjVMSvLVW9ocqUKLsCC5CXdbqCmblAshOMAS6/keqq/sMZMZ19scR4PsZChSR7A=="
+          crossorigin=""/>
+    <!-- 引入D3.js -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+        }
+        #map {
+            width: 100%;
+            height: 100vh;
+        }
+        .station {
+            fill: white;
+            stroke: black;
+            stroke-width: 1px;
+        }
+        .station:hover {
+            fill: yellow;
+            cursor: pointer;
+        }
+        .tooltip {
+            position: absolute;
+            padding: 8px;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            pointer-events: none;
+            font-size: 12px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            z-index: 9999; /* 增加z-index确保显示在最上层 */
+        }
+        .legend {
+            padding: 6px 8px;
+            font: 14px/16px Arial, Helvetica, sans-serif;
+            background: white;
+            background: rgba(255,255,255,0.8);
+            box-shadow: 0 0 15px rgba(0,0,0,0.2);
+            border-radius: 5px;
+        }
+        .legend h4 {
+            margin: 0 0 5px;
+            color: #777;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        .legend-color {
+            width: 18px;
+            height: 18px;
+            float: left;
+            margin-right: 8px;
+            opacity: 0.7;
+        }
+        .mode-controls {
+    position: absolute;
+    right: 20px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 1000;
+    padding: 10px;
+    border-radius: 25px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.mode-btn {
+    width: 40px;
+    height: 40px;
+    font-size: 20px;
+    background-color: rgba(0,0,0,0.5);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+    box-shadow: 0 0 5px rgba(0,0,0,0.3);
+}
+
+.mode-btn:hover {
+    background-color: rgba(0,0,0,0.7);
+    transform: scale(1.1);
+}
+
+.mode-btn.active {
+    background-color: #ff9aa2;
+    box-shadow: 0 0 10px #ff7883;
+}
+        .travel-path {
+            fill: none;
+            stroke-width: 2px;
+            filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.7));
+        }
+        /* 添加新样式 */
+        .station-marker {
+            filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.5));
+        }
+        
+        .inner-circle {
+            stroke: white;
+            stroke-width: 1px;
+            stroke-opacity: 0.6;  /* 添加20%透明度 */
+            pointer-events: all;
+        }
+        .d3-popup {
+    position: absolute;
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 10px;  
+    border-radius: 4px;  
+    pointer-events: auto;
+    box-shadow: 0 0 10px rgba(0,0,0,0.3);
+    z-index: 10000;
+    max-width: 300px;  
+    transition: opacity 0.1s;
+    font-size: 11px;  
+}
+
+.d3-popup-close {
+    position: absolute;
+    top: 3px; 
+    right: 7px;  
+    color: #ccc;
+    cursor: pointer;
+    font-size: 14px;  
+    font-weight: bold;
+}
+        .d3-popup-close:hover {
+        color: white;
+    }
+
+    /* 提示信息窗口样式 */
+    .info-window {
+        position: absolute;
+        bottom: 20px;
+        left: 20px;
+        width: 300px;
+        background: rgba(0, 0, 0, 0.7);
+        color: white;
+        padding: 15px;
+        border-radius: 5px;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        z-index: 1000;
+        pointer-events: none; /* 允许点击穿透 */
+    }
+    
+    .info-window h2 {
+        margin: 0 0 10px 0;
+        font-size: 18px;
+        font-weight: bold;
+        color: white;
+    }
+    
+    .info-window p {
+        margin: 5px 0;
+        font-size: 12px;
+        line-height: 1.5;
+        color: rgba(255, 255, 255, 0.9);
+    }
+
+    .age-filter {
+        position: absolute;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 1000;
+        background: rgba(0,0,0,0.5);
+        padding: 10px 15px;
+        border-radius: 5px;
+        box-shadow: 0 0 10px rgba(0,0,0,0.3);
+        width: 300px;
+        text-align: center;
+    }
+
+    .age-filter h4 {
+        margin: 0 0 5px;
+        color: white;
+        font-size: 14px;
+    }
+
+    .age-label {
+        margin-top: 8px;
+        font-size: 12px;
+        color: white;
+    }
+    .all-ages-btn {
+        background-color: black;
+        color: white;
+        border: none;
+        border-radius: 3px;
+        padding: 2px 6px;
+        margin-left: 8px;
+        font-size: 10px;
+        cursor: pointer;
+    }
+    
+    .all-ages-btn:hover {
+        background-color: #333;
+    }
+    
+    .slider-container {
+        position: relative;
+        width: 100%;
+        padding: 0 5px;
+    }
+    
+    .age-slider {
+        -webkit-appearance: none;
+        width: 100%;
+        height: 6px;
+        border-radius: 3px;
+        background: linear-gradient(to right, #B5FFB8, #00A542);
+        outline: none;
+    }
+
+    .age-slider::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: white;
+        cursor: pointer;
+        box-shadow: 0 0 5px rgba(0,0,0,0.3);
+    }
+
+    .age-slider::-moz-range-thumb {
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: white;
+        cursor: pointer;
+        box-shadow: 0 0 5px rgba(0,0,0,0.3);
+        border: none;
+    }
+
+    .slider-labels {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 5px;
+    }
+
+    .slider-labels span {
+        font-size: 10px;
+        color: white;
+    }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div class="mode-controls">
+        <button id="workdayBtn" class="mode-btn active" title="工作日">💼</button>
+        <button id="holidayBtn" class="mode-btn" title="节假日">🎉</button>
+    </div>
+    
+    <!-- 提示信息窗口 -->
+    <div class="info-window">
+        <h2>深圳市民地铁出行轨迹</h2>
+        <p>地铁是一座城市的骨架与脉搏。它缩短空间与时间，牵起了生活的轨迹与城市的脉络。</p>
+        <p>通勤的脚步、假日的欢乐、偶然的重逢，和不断延伸的生活半径。</p>
+        <p>在这张地图上，我们试图通过数据还原这些流动的轨迹，让人们在冷静的可视化背后，感受到城市中真实而细腻的存在。</p>
+    </div>
+
+       <!-- 添加年龄筛选滑块 -->
+    <div class="age-filter">
+        <h4>年龄</h4>
+        <div class="slider-container">
+            <input type="range" min="11" max="62" value="11" class="age-slider" id="ageSlider">
+            <div class="slider-labels">
+                <span>12</span>
+                <span>22</span>
+                <span>32</span>
+                <span>42</span>
+                <span>52</span>
+            </div>
+        </div>
+        <div class="age-controls">
+            <div class="age-label">当前选择: <span id="currentAgeRange">全部年龄</span>
+            <button id="allAgesBtn" class="all-ages-btn">ALL</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 引入Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"
+            integrity="sha512-XQoYMqMTK8LvdxXYG3nZ448hOEQiglfqkJs1NOQV44cWnUrBc8PkAOcXy20w0vlaXaVUearIOBhiXZ5V3ynxwA=="
+            crossorigin=""></script>
+    <script>
+        // 初始化Leaflet地图
+        const map = L.map('map').setView([22.55, 114.05], 12);
+
+        // 添加暗色底图
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+            subdomains: 'abcd',
+            maxZoom: 19
+        }).addTo(map);
+
+        // 创建SVG覆盖层，用于D3.js绘图
+        L.svg().addTo(map);
+
+        // 获取SVG覆盖层
+        const svg = d3.select("#map").select("svg");
+        const g = svg.append("g").attr("class", "leaflet-zoom-hide");
+        
+        // 创建图层组 (修改后的顺序)
+        const metroLinesLayer = g.append("g").attr("class", "metro-lines");
+        const stationsLayer = g.append("g").attr("class", "stations");       // <-- 提到前面
+        const travelPathsLayer = g.append("g").attr("class", "travel-paths");
+        const originLayer = g.append("g").attr("class", "origins");         // <-- 保持在后面，确保在顶层
+        const destinationLayer = g.append("g").attr("class", "destinations"); // <-- 保持在后面，确保在顶层
+
+        // 创建提示框
+        const tooltip = d3.select("body").append("div")
+            .attr("class", "tooltip")
+            .style("opacity", 0);
+
+        // 创建渐变定义
+        const defs = svg.append("defs");
+
+        // 用于将GeoJSON坐标转换为Leaflet坐标的函数
+        function projectPoint(x, y) {
+            const point = map.latLngToLayerPoint(new L.LatLng(y, x));
+            this.stream.point(point.x, point.y);
+        }
+
+        // 创建D3地理路径生成器
+        const transform = d3.geoTransform({point: projectPoint});
+        const path = d3.geoPath().projection(transform);
+
+        // 更新SVG元素位置的函数
+        function updateSvg() {
+            metroLinesLayer.selectAll("path").attr("d", path);
+            stationsLayer.selectAll(".station")
+                .attr("cx", d => {
+                    const point = map.latLngToLayerPoint(new L.LatLng(
+                        d.geometry.coordinates[1],
+                        d.geometry.coordinates[0]
+                    ));
+                    return point.x;
+                })
+                .attr("cy", d => {
+                    const point = map.latLngToLayerPoint(new L.LatLng(
+                        d.geometry.coordinates[1],
+                        d.geometry.coordinates[0]
+                    ));
+                    return point.y;
+                });
+                
+            // 更新出发地圆圈位置
+            originLayer.selectAll("circle").each(function(d) {
+                // 检查数据结构，适应不同类型的数据
+                let point;
+                if (d.feature) {
+                    // 处理内圆数据结构
+                    point = map.latLngToLayerPoint(new L.LatLng(
+                        d.feature.geometry.coordinates[1], 
+                        d.feature.geometry.coordinates[0]
+                    ));
+                } else {
+                    // 处理外圆数据结构
+                    point = map.latLngToLayerPoint(new L.LatLng(d.y, d.x));
+                }
+                
+                d3.select(this)
+                    .attr("cx", point.x)
+                    .attr("cy", point.y);
+            });
+            
+            // 更新目的地圆圈位置
+            destinationLayer.selectAll("circle").each(function(d) {
+                // 检查数据结构，适应不同类型的数据
+                let point;
+                if (d.feature) {
+                    // 处理内圆数据结构
+                    point = map.latLngToLayerPoint(new L.LatLng(
+                        d.feature.geometry.coordinates[1], 
+                        d.feature.geometry.coordinates[0]
+                    ));
+                } else {
+                    // 处理外圆数据结构
+                    point = map.latLngToLayerPoint(new L.LatLng(d.y, d.x));
+                }
+                
+                d3.select(this)
+                    .attr("cx", point.x)
+                    .attr("cy", point.y);
+            });
+            
+            // 更新路径位置和渐变
+            travelPathsLayer.selectAll("path").each(function(d) {
+                const sourcePoint = map.latLngToLayerPoint(new L.LatLng(d.source.y, d.source.x));
+                const targetPoint = map.latLngToLayerPoint(new L.LatLng(d.target.y, d.target.x));
+                
+                // 创建曲线路径
+                const dx = targetPoint.x - sourcePoint.x;
+                const dy = targetPoint.y - sourcePoint.y;
+                const dr = Math.sqrt(dx * dx + dy * dy) * 1.2; // 控制曲率
+                
+                d3.select(this).attr("d", `M${sourcePoint.x},${sourcePoint.y}A${dr},${dr} 0 0,1 ${targetPoint.x},${targetPoint.y}`);
+                
+                // 更新渐变的位置
+                const gradientId = "gradient-" + d.source.name + "-" + d.target.name;
+                d3.select("#" + gradientId.replace(/\s+/g, '-'))
+                    .attr("x1", sourcePoint.x)
+                    .attr("y1", sourcePoint.y)
+                    .attr("x2", targetPoint.x)
+                    .attr("y2", targetPoint.y);
+            });
+        }
+
+        // 监听地图缩放和移动事件
+        map.on("moveend", updateSvg);
+        
+        // 当前显示模式：工作日或节假日
+        let currentMode = 'workday';
+        let currentAgeFilter = 'all';
+        // 加载数据
+        Promise.all([
+            d3.json("shenzhen_lines.geojson"),
+            d3.json("shenzhen_stations.geojson"),
+            d3.csv("interview.csv")
+        ]).then(([linesData, stationsData, interviewData]) => {
+            // 绘制地铁线路（灰色）
+            metroLinesLayer.selectAll("path")
+                .data(linesData.features)
+                .enter()
+                .append("path")
+                .attr("d", path)
+                .attr("fill", "none")
+                .attr("stroke", "#888888") // 所有线路都设为灰色
+                .attr("stroke-width", 3)
+                .attr("stroke-opacity", 0.5) // 修改透明度为50%
+                .on("mouseover", (event, d) => {
+                    tooltip.transition()
+                        .duration(200)
+                        .style("opacity", .9);
+                    tooltip.html(`<b>${d.properties.LineName}</b><br>从: ${d.properties.From}<br>到: ${d.properties.To}`)
+                        .style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+                })
+                .on("mouseout", () => {
+                    tooltip.transition()
+                        .duration(200)
+                        .style("opacity", 0);
+                });
+            
+            // 创建站点名称到坐标的映射
+            const stationMap = {};
+            stationsData.features.forEach(station => {
+                stationMap[station.properties.StationNam] = {
+                    x: parseFloat(station.geometry.coordinates[0]),
+                    y: parseFloat(station.geometry.coordinates[1]),
+                    name: station.properties.StationNam,
+                    feature: station
+                };
+            });
+            
+            // 处理乘客出行数据
+            // 在processPassengerData函数外部声明infoPopup
+            let infoPopup;
+            
+            function processPassengerData(mode,ageFilter='all') {
+                // 清除之前的可视化
+                originLayer.selectAll("*").remove();
+                destinationLayer.selectAll("*").remove();
+                travelPathsLayer.selectAll("*").remove();
+                defs.selectAll("*").remove();
+                
+                // 如果infoPopup不存在，创建它
+                if (!infoPopup) {
+                    infoPopup = d3.select("body").append("div")
+                        .attr("class", "info-popup")
+                        .style("position", "absolute")
+                        .style("padding", "8px")
+                        .style("background", "white")
+                        .style("border", "1px solid #ddd")
+                        .style("border-radius", "4px")
+                        .style("pointer-events", "none")
+                        .style("font-size", "12px")
+                        .style("box-shadow", "0 0 10px rgba(0,0,0,0.1)")
+                        .style("opacity", 0)
+                        .style("z-index", 10000);
+                }
+                
+                // 隐藏之前可能显示的弹窗
+                infoPopup.style("display", "none");
+
+                let detailPopup;
+
+// 创建一个函数用于显示D3.js弹窗
+function showD3Popup(x, y, content) {
+    // 如果已经存在弹窗，先移除
+    if (detailPopup) {
+        detailPopup.remove();
+    }
+    
+    // 创建新弹窗
+    detailPopup = d3.select("body").append("div")
+        .attr("class", "d3-popup")
+        .style("left", (x + 10) + "px")
+        .style("top", (y - 28) + "px")
+        .style("opacity", 0);
+    
+    // 添加关闭按钮
+    detailPopup.append("span")
+        .attr("class", "d3-popup-close")
+        .html("&times;")
+        .on("click", function() {
+            detailPopup.transition()
+                .duration(300)
+                .style("opacity", 0)
+                .remove();
+        });
+    
+    // 添加内容
+    detailPopup.append("div")
+        .html(content);
+    
+    // 显示弹窗，添加动画效果
+    detailPopup.transition()
+        .duration(300)
+        .style("opacity", 1);
+    
+    // 点击地图其他区域关闭弹窗
+    d3.select("#map").on("click.popup", function() {
+        if (detailPopup) {
+            detailPopup.transition()
+                .duration(300)
+                .style("opacity", 0)
+                .remove();
+        }
+    });
+}
+                // 确定要处理的数据行
+                const dataRowIndex = mode === 'workday' ? 4 : 5;
+                
+                // 增强站点映射，添加作为起点和终点的记录
+                Object.values(stationMap).forEach(station => {
+                    station.asStart = [];
+                    station.asEnd = [];
+                });
+                
+            
+                // 记录所有出行信息
+                const allTravels = [];
+                let maxUsageCount = 0;
+                
+                // 统计每个站点作为出发地和目的地的次数
+                const originCounts = {};
+                const destCounts = {};
+                const travelPaths = [];
+                const passengerInfo = {};
+                
+                // 遍历每个乘客的出行信息
+                interviewData.columns.forEach((passenger, index) => {
+                    if (index === 0) return; 
+                    
+                    const travelInfo = interviewData[dataRowIndex][passenger];
+                    if (!travelInfo || travelInfo.trim() === '') return;
+                    
+                    // 提取出发地和目的地
+                    const travelSegments = travelInfo.split(';');
+                    
+                    travelSegments.forEach(segment => {
+                        // 先按逗号分割站点信息和线路信息
+                        const mainParts = segment.split('、');
+                        if (mainParts.length < 2) return; // 确保有站点和线路两部分
+                        
+                        const stationPart = mainParts[0];
+                        const linePart = mainParts[1];
+                        
+                        // 分割站点
+                        const stations = stationPart.split('-');
+                        if (stations.length < 2) return;
+                        
+                        // 记录乘客信息
+                        const passengerName = passenger;
+                        const passengerBirthYear = interviewData[0][passenger] || '未知';
+                        const passengerShen = interviewData[1][passenger] || '未知';
+                        const passengerComeYear = interviewData[2][passenger] || '未知';
+                        const passengerJob = interviewData[3][passenger] || '未知';
+                        const age = isNaN(parseInt(passengerBirthYear)) ? '未知' : (2022 - parseInt(passengerBirthYear));
+
+                        // 根据年龄筛选
+                        if (ageFilter !== 'all') {
+                            if (age === '未知') return;
+                            
+                            const ageNum = parseInt(age);
+                            if (ageFilter === '11-21' && (ageNum < 11 || ageNum > 21)) return;
+                            if (ageFilter === '22-32' && (ageNum < 22 || ageNum > 32)) return;
+                            if (ageFilter === '33-42' && (ageNum < 33 || ageNum > 42)) return;
+                            if (ageFilter === '43-52' && (ageNum < 43 || ageNum > 52)) return;
+                            if (ageFilter === '53-62' && (ageNum < 53 || ageNum > 62)) return;
+                        }
+                        
+                        // 修改：只处理整个路线的起点和终点
+                        if (stations.length >= 2) {
+                            const origin = stations[0].trim();
+                            const destination = stations[stations.length - 1].trim();
+                            
+                            // 检查站点是否存在于地铁站点数据中
+                            if (!stationMap[origin] || !stationMap[destination]) return;
+                            
+                            // 统计出发地和目的地次数
+                            originCounts[origin] = (originCounts[origin] || 0) + 1;
+                            destCounts[destination] = (destCounts[destination] || 0) + 1;
+                            
+                            // 记录乘客信息
+                            if (!passengerInfo[origin]) passengerInfo[origin] = [];
+                            if (!passengerInfo[destination]) passengerInfo[destination] = [];
+                            
+                            passengerInfo[origin].push({
+                                name: passengerName,
+                                shen: passengerShen,
+                                comeYear: passengerComeYear,
+                                year: isNaN(parseInt(passengerBirthYear)) ? '未知' : (2022 - parseInt(passengerBirthYear)),
+                                job: passengerJob
+                            });
+                            
+                            // 添加到起点和终点的记录中
+                            stationMap[origin].asStart.push({
+                                person: passengerName,
+                                year: isNaN(parseInt(passengerBirthYear)) ? '未知' : (2022 - parseInt(passengerBirthYear)),
+                                job: passengerJob, 
+                                startName: origin,
+                                endName: destination,
+                                fullRoute: travelInfo,
+                                type: mode
+                            });
+                            
+                            stationMap[destination].asEnd.push({
+                                person: passengerName,
+                                year: isNaN(parseInt(passengerBirthYear)) ? '未知' : (2022 - parseInt(passengerBirthYear)),
+                                job: passengerJob,
+                                startName: origin,
+                                endName: destination,
+                                fullRoute: travelInfo,
+                                type: mode
+                            });
+                            
+                            // 添加到所有出行记录
+                            allTravels.push({
+                                person: passengerName,
+                                year: isNaN(parseInt(passengerBirthYear)) ? '未知' : (2022 - parseInt(passengerBirthYear)),
+                                job: passengerJob,
+                                startName: origin,
+                                endName: destination,
+                                fullRoute: travelInfo,
+                                type: mode
+                            });
+                            
+                            // 更新最大使用次数
+                            const stationUsage = stationMap[origin].asStart.length + stationMap[origin].asEnd.length;
+                            const destUsage = stationMap[destination].asStart.length + stationMap[destination].asEnd.length;
+                            maxUsageCount = Math.max(maxUsageCount, stationUsage, destUsage);
+                            
+                            // 记录出行路径
+                            travelPaths.push({
+                                source: stationMap[origin],
+                                target: stationMap[destination],
+                                passenger: passengerName
+                            });
+                        }
+                    });
+                });
+                
+                // 为每条路径创建渐变
+                // 在控制台输出allTravels数组
+                console.log("所有出行记录:", allTravels);
+                
+                travelPaths.forEach((d, i) => {
+                    const gradientId = "gradient-" + d.source.name + "-" + d.target.name;
+                    const safeGradientId = gradientId.replace(/\s+/g, '-');
+                    
+                    const sourcePoint = map.latLngToLayerPoint(new L.LatLng(d.source.y, d.source.x));
+                    const targetPoint = map.latLngToLayerPoint(new L.LatLng(d.target.y, d.target.x));
+                    
+                    const gradient = defs.append("linearGradient")
+                        .attr("id", safeGradientId)
+                        .attr("x1", sourcePoint.x)
+                        .attr("y1", sourcePoint.y)
+                        .attr("x2", targetPoint.x)
+                        .attr("y2", targetPoint.y)
+                        .attr("gradientUnits", "userSpaceOnUse");
+                    
+                    gradient.append("stop")
+                        .attr("offset", "0%")
+                        .attr("stop-color", "#80E5A8"); // 绿色起点
+                    
+                    gradient.append("stop")
+                        .attr("offset", "100%")
+                        .attr("stop-color", "#FF5D6B"); // 红色终点
+                });
+                
+                // 绘制出行路径（渐变曲线）
+                travelPathsLayer.selectAll("path")
+                    .data(travelPaths)
+                    .enter()
+                    .append("path")
+                    .attr("class", "travel-path")
+                    .attr("d", d => {
+                        const sourcePoint = map.latLngToLayerPoint(new L.LatLng(d.source.y, d.source.x));
+                        const targetPoint = map.latLngToLayerPoint(new L.LatLng(d.target.y, d.target.x));
+                        
+                        // 创建曲线路径
+                        const dx = targetPoint.x - sourcePoint.x;
+                        const dy = targetPoint.y - sourcePoint.y;
+                        const dr = Math.sqrt(dx * dx + dy * dy) * 1.2; // 控制曲率
+                        
+                        return `M${sourcePoint.x},${sourcePoint.y}A${dr},${dr} 0 0,1 ${targetPoint.x},${targetPoint.y}`;
+                    })
+                    .attr("stroke", d => {
+                        const gradientId = "gradient-" + d.source.name + "-" + d.target.name;
+                        return "url(#" + gradientId.replace(/\s+/g, '-') + ")";
+                    })
+                    .attr("stroke-opacity", 0.8)
+                    .on("mouseover", (event, d) => {
+                        tooltip.transition()
+                            .duration(200)
+                            .style("opacity", .9);
+                        tooltip.html(`<b>乘客: ${d.passenger}</b><br>从: ${d.source.name}<br>到: ${d.target.name}`)
+                            .style("left", (event.pageX + 10) + "px")
+                            .style("top", (event.pageY - 28) + "px");
+                    })
+                    .on("mouseout", () => {
+                        tooltip.transition()
+                            .duration(200)
+                            .style("opacity", 0);
+                    });
+                
+                // 创建起点和终点的渐变定义
+                const startGradient = defs.append("radialGradient")
+                    .attr("id", "start-gradient")
+                    .attr("cx", "50%")
+                    .attr("cy", "50%")
+                    .attr("r", "50%")
+                    .attr("fx", "50%")
+                    .attr("fy", "50%");
+                
+                startGradient.append("stop")
+                    .attr("offset", "0%")
+                    .attr("stop-color", "#80E5A8")
+                    .attr("stop-opacity", 0.2);  // 改为透明
+                
+                startGradient.append("stop")
+                    .attr("offset", "100%")
+                    .attr("stop-color", "#80E5A8")
+                    .attr("stop-opacity", 0.8);  // 改为不透明
+                
+                const endGradient = defs.append("radialGradient")
+                    .attr("id", "end-gradient")
+                    .attr("cx", "50%")
+                    .attr("cy", "50%")
+                    .attr("r", "50%")
+                    .attr("fx", "50%")
+                    .attr("fy", "50%");
+                
+                endGradient.append("stop")
+                    .attr("offset", "0%")
+                    .attr("stop-color", "#FF5D6B")
+                    .attr("stop-opacity", 0.2);  // 改为透明
+                
+                endGradient.append("stop")
+                    .attr("offset", "100%")
+                    .attr("stop-color", "#FF5D6B")
+                    .attr("stop-opacity", 0.8);  // 改为不透明
+                
+                // 创建当前图层标记数组
+                const currentMarkers = [];
+                
+                // 使用新逻辑绘制站点标记
+                Object.entries(stationMap).forEach(([stationName, stationData]) => {
+    const feature = stationData.feature;
+    const asStartCount = stationData.asStart.length;
+    const asEndCount = stationData.asEnd.length;
+    const totalCount = asStartCount + asEndCount;
+
+    if (feature && totalCount > 0) {
+        const isMainlyStart = asStartCount >= asEndCount;
+        const minRadius = 12; 
+        const radius = minRadius + (totalCount * 4);
+
+        // ✅ 提前定义 allTravels，让外圆也能访问
+        const allTravels = [...stationData.asStart, ...stationData.asEnd];
+
+        const outerCircle = (isMainlyStart ? originLayer : destinationLayer).append("circle")
+            .datum(stationData)
+            .attr("class", `station-marker ${isMainlyStart ? 'start-station' : 'end-station'}`)
+            .attr("cx", d => {
+                const point = map.latLngToLayerPoint(new L.LatLng(d.y, d.x));
+                return point.x;
+            })
+            .attr("cy", d => {
+                const point = map.latLngToLayerPoint(new L.LatLng(d.y, d.x));
+                return point.y;
+            })
+            .attr("r", radius)
+            .attr("fill", isMainlyStart ? "url(#start-gradient)" : "url(#end-gradient)")
+           
+            .attr("filter", "drop-shadow(0 0 5px rgba(255, 255, 255, 0.5))")
+            .style("pointer-events", "all")
+            .on("mouseover", function(event, d) {
+                const stationName = d.name;
+                const allTravelsInfo = allTravels
+                    .filter(t => t.startName === stationName || t.endName === stationName)
+                    .map(t => {
+                        const role = t.startName === stationName ? '起点' : '终点';
+                        return `${t.person} (${role}): ${t.fullRoute}`;
+                    }).join('<br>');
+
+                infoPopup.html(
+                    `<strong>${stationName}</strong><br>${allTravelsInfo}`
+                )
+                .style("left", (event.pageX + 10) + "px")
+                .style("top", (event.pageY - 28) + "px")
+                .style("display", "block")
+                .style("opacity", 0.9);
+
+                d3.select(this)
+                    .attr("r", radius + 2)
+                    .attr("stroke-width", 2);
+            })
+            .on("mouseout", function(event, d) {
+                infoPopup.style("display", "none");
+                d3.select(this)
+                    .attr("r", radius)
+                    .attr("stroke-width", 1);
+            })
+.on("click", function(event, d) {
+    console.log("外圆点击了", d.name);
+    const stationName = d.name;
+    const allTravelsHtml =
+        `<div>
+            <h3 style="margin-top: 0; margin-bottom: 8px; font-size: 13px;">${stationName} 站点信息</h3>
+            ${allTravels.filter(t => t.startName === stationName || t.endName === stationName).map((t, i) => {
+                const role = t.startName === stationName ? '起点' : '终点';
+                const roleColor = role === '起点' ? '#80E5A8' : '#FF5D6B';
+                return `
+                    <div style="margin-bottom: 6px; font-size: 11px;">
+                        <p style="margin: 2px 0;"><strong style="color: ${roleColor};">${role}</strong> - 乘客: ${t.person}</p>
+                        <p style="margin: 2px 0;">年龄: ${t.year}</p>
+                        <p style="margin: 2px 0;">职业: ${t.job}</p>
+                        <p style="margin: 2px 0;">${t.type === 'workday' ? '工作日' : '节假日'}: ${t.fullRoute}</p>
+                    </div>`;
+            }).join('')}
+        </div>`;
+
+    // 使用D3.js弹窗替代Leaflet弹窗
+    showD3Popup(event.pageX, event.pageY, allTravelsHtml);
+    event.stopPropagation();
+});
+
+        currentMarkers.push(outerCircle);
+
+        if (allTravels.length > 1) {
+            const maxInnerCircles = Math.min(allTravels.length, 5); 
+            const baseRadius = 4;
+            const radiusStep = 6;
+
+            for (let i = maxInnerCircles - 1; i >= 0; i--) {
+                const travel = allTravels[i];
+                const innerRadius = baseRadius + (i * radiusStep);
+                const isStartForThisTravel = travel.startName === stationName;
+
+                const innerCircle = (isMainlyStart ? originLayer : destinationLayer).append("circle")
+                    .datum({ feature: feature, travel: travel })
+                    .attr("class", `station-marker inner-circle ${isMainlyStart ? 'start-station' : 'end-station'}`)
+                    .attr("cx", d => {
+                        const point = map.latLngToLayerPoint(new L.LatLng(d.feature.geometry.coordinates[1], d.feature.geometry.coordinates[0]));
+                        return point.x;
+                    })
+                    .attr("cy", d => {
+                        const point = map.latLngToLayerPoint(new L.LatLng(d.feature.geometry.coordinates[1], d.feature.geometry.coordinates[0]));
+                        return point.y;
+                    })
+                    .attr("r", innerRadius)
+                    .attr("fill", isStartForThisTravel ? "url(#start-gradient)" : "url(#end-gradient)")
+                    .attr("stroke", "none")
+                    .attr("filter", "drop-shadow(0 0 3px rgba(255, 255, 255, 0.3))")
+                    .on("mouseover", function(event, d) {
+                        const travel = d.travel;
+                        const role = travel.startName === stationName ? '起点' : '终点';
+
+                        infoPopup.html(
+                            `<strong>${stationName}</strong> (${role})<br>
+                            乘客: ${travel.person}<br>
+                            类型: ${travel.type === 'workday' ? '工作日' : '节假日'}<br>
+                            路线: ${travel.fullRoute}`
+                        )
+                        .style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 28) + "px")
+                        .style("display", "block")
+                        .style("opacity", 0.9);
+
+                        d3.select(this)
+
+                        event.stopPropagation();
+                    })
+                    .on("mouseout", function(event) {
+                        infoPopup.style("display", "none");
+                        d3.select(this)
+                            .attr("stroke-width", 1)
+                            .attr("stroke", "white");
+                        event.stopPropagation();
+                    })
+                    // 修改内圆点击事件中的HTML内容
+.on("click", function(event, d) {
+    const travel = d.travel;
+    const role = travel.startName === stationName ? '起点' : '终点';
+
+    const routeDetailsHtml = 
+        `<div>
+            <h3 style="margin-top: 0; margin-bottom: 8px; font-size: 13px;">${travel.person} 的出行信息</h3>
+            <p style="margin: 2px 0; font-size: 11px;"><strong>年龄:</strong> ${travel.year}</p>
+            <p style="margin: 2px 0; font-size: 11px;"><strong>职业:</strong> ${travel.job}</p>
+            <p style="margin: 2px 0; font-size: 11px;"><strong>${stationName} 作为:</strong> <span style="color: ${role === '起点' ? '#80E5A8' : '#FF5D6B'};">${role}</span></p>
+            <p style="margin: 2px 0; font-size: 11px;"><strong>出行类型:</strong> ${travel.type === 'workday' ? '工作日' : '节假日'}</p>
+            <p style="margin: 2px 0; font-size: 11px;"><strong>完整路线:</strong> ${travel.fullRoute}</p>
+        </div>`;
+
+    // 使用D3.js弹窗替代Leaflet弹窗
+    showD3Popup(event.pageX, event.pageY, routeDetailsHtml);
+    event.stopPropagation();
+});
+
+                currentMarkers.push(innerCircle);
+            }
+        }
+    }                   
+});
+}
+            // 初始加载工作日数据
+            processPassengerData('workday', 'all');
+            
+            // 添加按钮事件监听
+            
+            document.getElementById('workdayBtn').addEventListener('click', function() {
+                if (currentMode !== 'workday') {
+                    currentMode = 'workday';
+                    document.getElementById('workdayBtn').classList.add('active');
+                    document.getElementById('holidayBtn').classList.remove('active');
+                    processPassengerData('workday', currentAgeFilter);
+                }
+            });
+            
+            document.getElementById('holidayBtn').addEventListener('click', function() {
+                if (currentMode !== 'holiday') {
+                    currentMode = 'holiday';
+                    document.getElementById('holidayBtn').classList.add('active');
+                    document.getElementById('workdayBtn').classList.remove('active');
+                    processPassengerData('holiday', currentAgeFilter);
+                }
+            });
+            // 添加年龄筛选按钮事件监听
+            document.getElementById('ageSlider').addEventListener('input', function() {
+        const value = parseInt(this.value);
+        let ageFilter;
+        let rangeText;
+        
+        if (value <= 21) {
+            ageFilter = '11-21';
+            rangeText = '11-21岁';
+        } else if (value <= 32) {
+            ageFilter = '22-32';
+            rangeText = '22-32岁';
+        } else if (value <= 42) {
+            ageFilter = '33-42';
+            rangeText = '33-42岁';
+        } else if (value <= 52) {
+            ageFilter = '43-52';
+            rangeText = '43-52岁';
+        } else {
+            ageFilter = '53-62';
+            rangeText = '53-62岁';
+        }
+        
+        if (currentAgeFilter !== ageFilter) {
+            currentAgeFilter = ageFilter;
+            document.getElementById('currentAgeRange').textContent = rangeText;
+            processPassengerData(currentMode, currentAgeFilter);
+        }
+    });
+    // 添加ALL年龄按钮事件监听
+document.getElementById('allAgesBtn').addEventListener('click', function() {
+    if (currentAgeFilter !== 'all') {
+        currentAgeFilter = 'all';
+        document.getElementById('currentAgeRange').textContent = '全部年龄';
+        processPassengerData(currentMode, currentAgeFilter);
+    }
+});
+        ;
+        
+        // 设置活动按钮
+        function setActiveAgeButton(buttonId) {
+            // 移除所有按钮的active类
+            document.querySelectorAll('.age-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            // 为当前按钮添加active类
+            document.getElementById(buttonId).classList.add('active');
+        }
+            // 绘制地铁站点（小点）
+            stationsLayer.selectAll("circle")
+                .data(stationsData.features)
+                .enter()
+                .append("circle")
+                .attr("class", "station")
+                .attr("cx", d => {
+                    const point = map.latLngToLayerPoint(new L.LatLng(
+                        d.geometry.coordinates[1],
+                        d.geometry.coordinates[0]
+                    ));
+                    return point.x;
+                })
+                .attr("cy", d => {
+                    const point = map.latLngToLayerPoint(new L.LatLng(
+                        d.geometry.coordinates[1],
+                        d.geometry.coordinates[0]
+                    ));
+                    return point.y;
+                })
+                .attr("r", 2)
+                .attr("fill-opacity", 0.6);
+            
+            // 初始更新SVG元素位置
+            updateSvg();
+            
+            // 添加图例
+            const legend = L.control({position: 'bottomright'});
+            
+            legend.onAdd = function (map) {
+                const div = L.DomUtil.create('div', 'legend');
+                div.innerHTML = `
+                    <h4>图例</h4>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #80E5A8;"></div>
+                        <span>出发点</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #FF5D6B;"></div>
+                        <span>目的地</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: linear-gradient(90deg, #80E5A8, #FF5D6B);"></div>
+                        <span>乘客出行路径</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #888888;"></div>
+                        <span>地铁线路</span>
+                    </div>
+                `;
+                return div;
+            };
+            
+            legend.addTo(map);
+        }).catch(error => {
+            console.error("加载数据时出错:", error);
+            alert("加载数据时出错，请确保文件路径正确且通过HTTP服务器访问。");
+        });
+    </script>
+</body>
+</html>
